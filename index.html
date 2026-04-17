@@ -2,501 +2,287 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>TITAN TIMUR: ULTIMATE HORROR ENGINE</title>
+    <title>Escape from Dinic: Murino Edition</title>
     <style>
-        body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; user-select: none; }
-        #game-container { position: relative; width: 100vw; height: 100vh; }
-        
-        /* Интерфейс */
-        #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 10; }
-        #crosshair { position: absolute; top: 50%; left: 50%; width: 4px; height: 4px; background: rgba(255,255,255,0.8); border-radius: 50%; transform: translate(-50%, -50%); }
-        #crosshair-circle { position: absolute; top: 50%; left: 50%; width: 30px; height: 30px; border: 1px solid rgba(255,255,255,0.2); border-radius: 50%; transform: translate(-50%, -50%); }
-        
-        .stat-box { position: absolute; padding: 15px; color: #ff3333; text-shadow: 2px 2px #000; border-left: 3px solid #ff3333; background: rgba(0,0,0,0.5); }
-        #top-info { top: 20px; left: 20px; }
-        #bottom-info { bottom: 20px; right: 20px; text-align: right; }
-        
-        #health-bar-bg { width: 200px; height: 10px; background: #300; margin-top: 5px; }
-        #health-bar-fill { width: 100%; height: 100%; background: #f00; transition: width 0.3s; }
-        
-        /* Эффекты */
-        #vignette { position: absolute; top: 0; left: 0; width: 100%; height: 100%; box-shadow: inset 0 0 150px rgba(0,0,0,0.9); pointer-events: none; }
-        #noise { position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0.05; pointer-events: none; background: url('https://media.giphy.com/media/oEI9uWUicG7E4/giphy.gif'); }
-        
-        /* Экраны */
-        .overlay-screen { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; background: rgba(0,0,0,0.9); z-index: 100; transition: opacity 1s; }
-        #death-screen { display: none; color: #ff0000; }
-        #start-screen { color: #fff; }
-        
-        button { background: #500; color: #fff; border: 1px solid #f00; padding: 15px 40px; font-size: 1.2rem; cursor: pointer; margin-top: 20px; letter-spacing: 2px; }
-        button:hover { background: #800; }
-        
-        #inventory-hud { position: absolute; bottom: 20px; left: 20px; display: flex; gap: 10px; }
-        .inv-slot { width: 50px; height: 50px; background: rgba(0,0,0,0.7); border: 1px solid #444; display: flex; justify-content: center; align-items: center; color: #fff; font-size: 0.8rem; }
+        body { margin: 0; overflow: hidden; background: #000; font-family: 'Tahoma', sans-serif; }
+        canvas { display: block; image-rendering: pixelated; }
+        #ui { 
+            position: absolute; top: 20px; left: 20px; color: #fff; 
+            text-shadow: 2px 2px 5px #000; font-size: 18px; z-index: 100;
+            background: rgba(0,0,0,0.5); padding: 10px; border-radius: 5px;
+        }
     </style>
 </head>
 <body>
+    <div id="ui"></div>
+    <canvas id="game"></canvas>
 
-<div id="game-container">
-    <div id="vignette"></div>
-    <div id="noise"></div>
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const ui = document.getElementById('ui');
+
+let state = 'BASEMENT'; // BASEMENT, HOUSE, YARD, RACING, END
+let keysFound = 0;
+let hasBasementKey = false;
+let hasGas = false;
+let message = "";
+let alpha = 1; 
+
+const player = {
+    x: 100, y: 0, w: 30, h: 64, vx: 0, vy: 0,
+    speed: 4.5, run: 7.5, dir: 1, hiding: false, grounded: false
+};
+
+const denis = {
+    x: 2500, y: 0, w: 50, h: 140, speed: 2.3, chaseSpeed: 4.8,
+    dir: -1, state: 'WANDER', targetX: 2500, active: false
+};
+
+let objects = [];
+let platforms = [];
+let cameraX = 0;
+const keys = {};
+
+window.onkeydown = (e) => keys[e.code] = true;
+window.onkeyup = (e) => keys[e.code] = false;
+
+// Рисование детализированного персонажа
+function drawHuman(x, y, w, h, color, isDenis = false) {
+    ctx.fillStyle = color;
+    // Тело
+    ctx.fillRect(x + w*0.2, y + h*0.3, w*0.6, h*0.4);
+    // Голова
+    ctx.beginPath();
+    ctx.arc(x + w*0.5, y + h*0.15, w*0.35, 0, Math.PI*2);
+    ctx.fill();
+    // Ноги
+    ctx.fillRect(x + w*0.2, y + h*0.7, w*0.2, h*0.3);
+    ctx.fillRect(x + w*0.6, y + h*0.7, w*0.2, h*0.3);
     
-    <div id="ui-layer">
-        <div id="crosshair"></div>
-        <div id="crosshair-circle"></div>
-        
-        <div id="top-info" class="stat-box">
-            <div>ОБЪЕКТ: ТИТАН ТИМУР</div>
-            <div id="health-bar-bg"><div id="health-bar-fill"></div></div>
-            <div id="status-text" style="font-size: 0.8rem; margin-top: 5px;">СТАТУС: НОРМА</div>
-        </div>
-        
-        <div id="bottom-info" class="stat-box">
-            <div id="weapon-name">ОРУЖИЕ: КУЛАКИ</div>
-            <div id="ammo-count">ПАТРОНЫ: 0 / 0</div>
-            <div id="floor-counter">ЭТАЖ: 1 / 5</div>
-        </div>
-
-        <div id="inventory-hud">
-            <div class="inv-slot" id="slot-1">1</div>
-            <div class="inv-slot" id="slot-2">2</div>
-            <div class="inv-slot" id="slot-3">3</div>
-        </div>
-    </div>
-
-    <div id="start-screen" class="overlay-screen">
-        <h1 style="font-size: 3rem; text-shadow: 0 0 20px #f00;">PROJECT: DINIS</h1>
-        <p>Найди AWP в подвале. Не дай ему подойти.</p>
-        <button id="start-btn">ЗАПУСК СИСТЕМЫ</button>
-    </div>
-
-    <div id="death-screen" class="overlay-screen">
-        <h1 style="font-size: 4rem;">СИСТЕМА ОТКЛЮЧЕНА</h1>
-        <p>ДІНІС ПОГЛОТИЛ ВАС</p>
-        <button onclick="location.reload()">ПЕРЕЗАГРУЗКА</button>
-    </div>
-</div>
-
-<script type="importmap">
-    { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
-</script>
-
-<script type="module">
-import * as THREE from 'three';
-
-/** * КЛАСС ЗВУКОВОГО ДВИЖКА (Web Audio API)
- * Создает атмосферу без внешних mp3 файлов
- */
-class SoundEngine {
-    constructor() {
-        this.ctx = new (window.AudioContext || window.webkitAudioContext)();
-    }
-
-    playAmbient() {
-        const osc = this.ctx.createOscillator();
-        const gain = this.ctx.createGain();
-        osc.type = 'brown'; 
-        osc.frequency.setValueAtTime(40, this.ctx.currentTime);
-        gain.gain.setValueAtTime(0.02, this.ctx.currentTime);
-        osc.connect(gain);
-        gain.connect(this.ctx.destination);
-        osc.start();
-    }
-
-    playShoot() {
-        const osc = this.ctx.createOscillator();
-        const gain = this.ctx.createGain();
-        osc.type = 'square';
-        osc.frequency.setValueAtTime(150, this.ctx.currentTime);
-        osc.frequency.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.5);
-        gain.gain.setValueAtTime(0.1, this.ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.5);
-        osc.connect(gain);
-        gain.connect(this.ctx.destination);
-        osc.start();
-        osc.stop(this.ctx.currentTime + 0.5);
-    }
-
-    playStep() {
-        const noise = this.ctx.createOscillator();
-        const gain = this.ctx.createGain();
-        noise.type = 'triangle';
-        noise.frequency.setValueAtTime(60, this.ctx.currentTime);
-        gain.gain.setValueAtTime(0.01, this.ctx.currentTime);
-        gain.gain.linearRampToValueAtTime(0, this.ctx.currentTime + 0.1);
-        noise.connect(gain);
-        gain.connect(this.ctx.destination);
-        noise.start();
-        noise.stop(this.ctx.currentTime + 0.1);
+    if (isDenis) {
+        ctx.fillStyle = 'red';
+        ctx.fillRect(x + w*0.3, y + h*0.1, 4, 2);
+        ctx.fillRect(x + w*0.6, y + h*0.1, 4, 2);
     }
 }
 
-/**
- * ГЛАВНЫЙ КЛАСС ИГРЫ
- */
-class GameCore {
-    constructor() {
-        this.scene = new THREE.Scene();
-        this.scene.background = new THREE.Color(0x020202);
-        this.scene.fog = new THREE.FogExp2(0x000000, 0.1);
-        
-        this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-        this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
-        this.renderer.setSize(window.innerWidth, window.innerHeight);
-        this.renderer.setPixelRatio(window.devicePixelRatio);
-        this.renderer.shadowMap.enabled = true;
-        this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-        document.getElementById('game-container').appendChild(this.renderer.domElement);
-
-        this.sounds = new SoundEngine();
-        this.clock = new THREE.Clock();
-        
-        // Параметры игрока
-        this.player = {
-            velocity: new THREE.Vector3(),
-            direction: new THREE.Vector3(),
-            speed: 5.0,
-            runSpeed: 9.0,
-            health: 100,
-            sanity: 100,
-            hasAWP: false,
-            ammo: 0,
-            isGrounded: true
-        };
-
-        this.controls = {
-            moveF: false, moveB: false, moveL: false, moveR: false, shift: false,
-            mouse: new THREE.Vector2(),
-            isLocked: false
-        };
-
-        this.objects = []; // Коллизии
-        this.items = []; // Лут
-        this.monsters = []; // Враги
-
-        this.init();
+function initBasement() {
+    state = 'BASEMENT';
+    message = "Темный подвал... Найди ключ в хламе (E)";
+    platforms = [{ x: 0, y: 550, w: 2500, h: 100 }];
+    objects = [];
+    // Много рандомного мусора
+    let keyPlaced = false;
+    for(let i=0; i<15; i++) {
+        let isKey = !keyPlaced && (Math.random() > 0.8 || i === 14);
+        if (isKey) keyPlaced = true;
+        objects.push({ x: 300 + i*130, y: 510, w: 50, h: 40, type: 'junk', hasKey: isKey });
     }
+    objects.push({ x: 2300, y: 410, w: 80, h: 140, type: 'door_to_house' });
+}
 
-    init() {
-        this.setupLights();
-        this.generateMap();
-        this.createPlayerModel();
-        this.spawnMonster();
-        this.bindEvents();
-        this.animate();
+function initHouse() {
+    state = 'HOUSE';
+    alpha = 1;
+    player.x = 100; player.y = 800;
+    denis.active = true;
+    keysFound = 0;
+    platforms = [
+        { x: 0, y: 900, w: 4000, h: 40 }, 
+        { x: 0, y: 650, w: 3500, h: 30 }, 
+        { x: 500, y: 400, w: 3500, h: 30 }
+    ];
+    objects = [
+        { x: 3300, y: 650, w: 80, h: 250, type: 'stairs', toY: 650 },
+        { x: 600, y: 400, w: 80, h: 250, type: 'stairs', toY: 400 },
+        { x: 3400, y: 510, w: 90, h: 140, type: 'lift' }
+    ];
+    // Рандомные шкафы
+    let cabinets = [
+        {x: 400, y: 800, lvl: 0}, {x: 1200, y: 800, lvl: 0}, {x: 2000, y: 800, lvl: 0},
+        {x: 800, y: 550, lvl: 1}, {x: 1800, y: 550, lvl: 1}, {x: 2600, y: 550, lvl: 1},
+        {x: 1000, y: 300, lvl: 2}, {x: 2200, y: 300, lvl: 2}
+    ];
+    // Перемешиваем и выбираем 3 с ключами
+    cabinets.sort(() => Math.random() - 0.5);
+    cabinets.forEach((c, idx) => {
+        objects.push({ x: c.x, y: c.y, w: 60, h: 100, type: 'locker', hasKey: idx < 3 });
+    });
+}
+
+function initYard() {
+    state = 'YARD';
+    alpha = 1;
+    player.x = 100; player.y = 500;
+    denis.active = false;
+    hasGas = false;
+    platforms = [{ x: 0, y: 600, w: 6000, h: 100 }];
+    objects = [];
+    // Рандомный бензин в кустах
+    let gasIdx = Math.floor(Math.random() * 25);
+    for(let i=0; i<35; i++) {
+        objects.push({ x: 400 + i*150, y: 520, w: 70, h: 80, type: 'bush', hasGas: i === gasIdx });
     }
+    objects.push({ x: 5800, y: 530, w: 100, h: 70, type: 'pitbike' });
+}
 
-    setupLights() {
-        // Фоновое освещение
-        const amb = new THREE.AmbientLight(0x111122, 0.5);
-        this.scene.add(amb);
+function update() {
+    if (alpha > 0) alpha -= 0.02;
 
-        // Фонарик Тимура
-        this.flashlight = new THREE.SpotLight(0xffffff, 20);
-        this.flashlight.angle = Math.PI / 7;
-        this.flashlight.penumbra = 0.4;
-        this.flashlight.decay = 2;
-        this.flashlight.distance = 45;
-        this.flashlight.castShadow = true;
-        this.scene.add(this.flashlight);
-        this.scene.add(this.flashlight.target);
-    }
+    if (!player.hiding) {
+        let s = keys['ShiftLeft'] ? player.run : player.speed;
+        if (keys['KeyA']) { player.vx = -s; player.dir = -1; }
+        else if (keys['KeyD']) { player.vx = s; player.dir = 1; }
+        else { player.vx *= 0.8; }
 
-    /** * ПРОЦЕДУРНАЯ ГЕНЕРАЦИЯ МИРА
-     * Создает сложную структуру комнат и коридоров
-     */
-    generateMap() {
-        const floorSize = 120;
-        const floorH = 6;
-        
-        const wallMat = new THREE.MeshPhongMaterial({ color: 0x222222 });
-        const floorMat = new THREE.MeshPhongMaterial({ color: 0x111111 });
+        player.vy += 0.6;
+        player.x += player.vx;
+        player.y += player.vy;
 
-        // Создаем 5 этажей
-        for (let f = -1; f < 5; f++) {
-            const y = f * floorH;
-            
-            // Основной пол
-            const floor = new THREE.Mesh(new THREE.PlaneGeometry(floorSize, floorSize), floorMat);
-            floor.rotation.x = -Math.PI / 2;
-            floor.position.y = y;
-            floor.receiveShadow = true;
-            this.scene.add(floor);
-
-            // Потолок
-            const ceil = new THREE.Mesh(new THREE.PlaneGeometry(floorSize, floorSize), wallMat);
-            ceil.rotation.x = Math.PI / 2;
-            ceil.position.y = y + floorH;
-            this.scene.add(ceil);
-
-            // Стены-периметр
-            this.addWall(0, y + 3, floorSize/2, floorSize, 6, 1);
-            this.addWall(0, y + 3, -floorSize/2, floorSize, 6, 1);
-            this.addWall(floorSize/2, y + 3, 0, 1, 6, floorSize);
-            this.addWall(-floorSize/2, y + 3, 0, 1, 6, floorSize);
-
-            // Внутренние перегородки (сложный паттерн)
-            for (let i = 0; i < 15; i++) {
-                const wx = Math.floor(Math.random() * 10 - 5) * 10;
-                const wz = Math.floor(Math.random() * 10 - 5) * 10;
-                const ww = Math.random() > 0.5 ? 15 : 2;
-                const wd = ww === 2 ? 15 : 2;
-                this.addWall(wx, y + 3, wz, ww, 6, wd);
-            }
-            
-            // Мебель (простые кубы-шкафы)
-            for (let j = 0; j < 10; j++) {
-                const cabinet = new THREE.Mesh(new THREE.BoxGeometry(2, 4, 1), new THREE.MeshPhongMaterial({color: 0x1a0a00}));
-                cabinet.position.set(Math.random()*80-40, y + 2, Math.random()*80-40);
-                this.scene.add(cabinet);
-                this.objects.push(cabinet);
-            }
-        }
-
-        // Подвал (спец зона)
-        this.spawnWeapon(0, -5.5, 0);
-    }
-
-    addWall(x, y, z, w, h, d) {
-        const wall = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshPhongMaterial({color: 0x252525}));
-        wall.position.set(x, y, z);
-        wall.castShadow = true;
-        wall.receiveShadow = true;
-        this.scene.add(wall);
-        this.objects.push(wall);
-    }
-
-    spawnWeapon(x, y, z) {
-        const awp = new THREE.Group();
-        const body = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.4, 2), new THREE.MeshPhongMaterial({color: 0x004400}));
-        awp.add(body);
-        awp.position.set(x, y, z);
-        awp.userData = { type: 'AWP' };
-        this.scene.add(awp);
-        this.items.push(awp);
-    }
-
-    createPlayerModel() {
-        this.camera.position.set(0, 1.7, 10);
-        this.player.mesh = new THREE.Group();
-        this.scene.add(this.player.mesh);
-    }
-
-    spawnMonster() {
-        const dinis = new THREE.Group();
-        const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.7, 2, 4, 8), new THREE.MeshPhongMaterial({color: 0x000000}));
-        dinis.add(body);
-        
-        const eyeL = new THREE.Mesh(new THREE.SphereGeometry(0.12), new THREE.MeshBasicMaterial({color: 0xff0000}));
-        eyeL.position.set(0.3, 1.2, 0.5);
-        const eyeR = eyeL.clone();
-        eyeR.position.x = -0.3;
-        dinis.add(eyeL, eyeR);
-
-        dinis.position.set(30, 18, 30); // Ждет на 4 этаже
-        this.scene.add(dinis);
-        
-        this.dinisData = {
-            mesh: dinis,
-            speed: 0.05,
-            isStunned: false,
-            lastSeen: new THREE.Vector3(),
-            state: 'IDLE' // IDLE, HUNT, STUN
-        };
-        this.monsters.push(this.dinisData);
-    }
-
-    bindEvents() {
-        document.getElementById('start-btn').onclick = () => {
-            document.body.requestPointerLock();
-            document.getElementById('start-screen').style.opacity = '0';
-            setTimeout(() => document.getElementById('start-screen').style.display = 'none', 1000);
-            this.sounds.playAmbient();
-        };
-
-        document.addEventListener('pointerlockchange', () => {
-            this.controls.isLocked = document.pointerLockElement === document.body;
-        });
-
-        window.addEventListener('keydown', (e) => {
-            if (e.code === 'KeyW') this.controls.moveF = true;
-            if (e.code === 'KeyS') this.controls.moveB = true;
-            if (e.code === 'KeyA') this.controls.moveL = true;
-            if (e.code === 'KeyD') this.controls.moveR = true;
-            if (e.code === 'ShiftLeft') this.controls.shift = true;
-            if (e.code === 'Space' && this.player.isGrounded) this.player.velocity.y = 8;
-        });
-
-        window.addEventListener('keyup', (e) => {
-            if (e.code === 'KeyW') this.controls.moveF = false;
-            if (e.code === 'KeyS') this.controls.moveB = false;
-            if (e.code === 'KeyA') this.controls.moveL = false;
-            if (e.code === 'KeyD') this.controls.moveR = false;
-            if (e.code === 'ShiftLeft') this.controls.shift = false;
-        });
-
-        window.addEventListener('mousemove', (e) => {
-            if (!this.controls.isLocked) return;
-            this.camera.rotation.y -= e.movementX * 0.002;
-            const newX = this.camera.rotation.x - e.movementY * 0.002;
-            this.camera.rotation.x = Math.max(-Math.PI/2.1, Math.min(Math.PI/2.1, newX));
-        });
-
-        window.addEventListener('mousedown', () => {
-            if (this.controls.isLocked && this.player.hasAWP && this.player.ammo > 0) {
-                this.shoot();
+        player.grounded = false;
+        platforms.forEach(p => {
+            if (player.x + player.w > p.x && player.x < p.x + p.w &&
+                player.y + player.h > p.y && player.y + player.h < p.y + p.h + 10) {
+                player.y = p.y - player.h; player.vy = 0; player.grounded = true;
             }
         });
     }
 
-    shoot() {
-        this.player.ammo--;
-        this.sounds.playShoot();
-        this.updateUI();
+    cameraX += (player.x - canvas.width / 2 - cameraX) * 0.1;
 
-        // Отдача
-        this.camera.rotation.x += 0.05;
+    if (denis.active) {
+        let dist = Math.abs(denis.x - player.x);
+        let sameFloor = Math.abs(denis.y - player.y) < 150;
 
-        const ray = new THREE.Raycaster();
-        ray.setFromCamera(new THREE.Vector2(0,0), this.camera);
-        
-        const hits = ray.intersectObjects(this.scene.children, true);
-        if (hits.length > 0) {
-            const hit = hits[0];
-            if (hit.object.parent === this.dinisData.mesh || hit.object === this.dinisData.mesh) {
-                this.stunMonster(this.dinisData);
-            }
+        if (player.hiding) { denis.state = 'WANDER'; }
+        else if (dist < 650 && sameFloor) { denis.state = 'CHASE'; }
+
+        if (denis.state === 'CHASE') denis.x += (player.x > denis.x ? 1 : -1) * denis.chaseSpeed;
+        else {
+            if (Math.abs(denis.x - denis.targetX) < 20) denis.targetX = Math.random() * 3500;
+            denis.x += (denis.targetX > denis.x ? 1 : -1) * denis.speed;
         }
+        platforms.forEach(p => { if (denis.x + denis.w > p.x && denis.x < p.x + p.w) denis.y = p.y - denis.h; });
+        if (dist < 40 && sameFloor && !player.hiding) location.reload();
     }
 
-    stunMonster(m) {
-        m.isStunned = true;
-        m.state = 'STUN';
-        m.mesh.rotation.x = Math.PI / 2;
-        document.getElementById('status-text').innerText = "СТАТУС: ЦЕЛЬ НЕЙТРАЛИЗОВАНА";
-        setTimeout(() => {
-            m.isStunned = false;
-            m.state = 'HUNT';
-            m.mesh.rotation.x = 0;
-            document.getElementById('status-text').innerText = "СТАТУС: УГРОЗА ОБНАРУЖЕНА";
-        }, 8000);
-    }
-
-    updatePlayer(dt) {
-        if (!this.controls.isLocked) return;
-
-        const currentSpeed = this.controls.shift ? this.player.runSpeed : this.player.speed;
-        
-        this.player.direction.z = Number(this.controls.moveB) - Number(this.controls.moveF);
-        this.player.direction.x = Number(this.controls.moveR) - Number(this.controls.moveL);
-        this.player.direction.normalize();
-
-        if (this.controls.moveF || this.controls.moveB || this.controls.moveL || this.controls.moveR) {
-            const camDir = new THREE.Vector3();
-            this.camera.getWorldDirection(camDir);
-            camDir.y = 0;
-            camDir.normalize();
-            
-            const sideDir = new THREE.Vector3().crossVectors(new THREE.Vector3(0,1,0), camDir).normalize();
-            
-            const moveVec = new THREE.Vector3().addScaledVector(camDir, -this.player.direction.z).addScaledVector(sideDir, -this.player.direction.x);
-            this.camera.position.addScaledVector(moveVec, currentSpeed * dt);
-            
-            // Звук шагов
-            if (this.clock.elapsedTime % 0.4 < 0.05) this.sounds.playStep();
-        }
-
-        // Гравитация
-        this.player.velocity.y -= 18 * dt;
-        this.camera.position.y += this.player.velocity.y * dt;
-
-        if (this.camera.position.y < 1.7 + (Math.floor(this.camera.position.y / 6) * 6)) {
-            this.player.velocity.y = 0;
-            this.camera.position.y = 1.7 + (Math.floor(this.camera.position.y / 6) * 6);
-            this.player.isGrounded = true;
-        }
-
-        // Обновление фонарика
-        this.flashlight.position.copy(this.camera.position);
-        const fTarget = new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion).add(this.camera.position);
-        this.flashlight.target.position.copy(fTarget);
-
-        // Проверка предметов
-        this.items.forEach((item, idx) => {
-            if (this.camera.position.distanceTo(item.position) < 2.5) {
-                this.collectItem(item, idx);
+    if (keys['KeyE']) {
+        keys['KeyE'] = false;
+        objects.forEach(obj => {
+            if (Math.abs(player.x - obj.x) < 80) {
+                if (obj.type === 'junk' && obj.hasKey) { hasBasementKey = true; message = "Ключ найден!"; }
+                if (obj.type === 'door_to_house' && hasBasementKey) initHouse();
+                if (obj.type === 'locker') {
+                    player.hiding = !player.hiding;
+                    if (obj.hasKey) { keysFound++; obj.hasKey = false; message = "Нашел ключ!"; }
+                }
+                if (obj.type === 'stairs') player.y = obj.toY - player.h;
+                if (obj.type === 'lift' && keysFound >= 3) initYard();
+                if (obj.type === 'bush' && obj.hasGas) { hasGas = true; message = "Бензин у тебя!"; }
+                if (obj.type === 'pitbike' && hasGas) startRacing();
             }
         });
-        
-        // Этажи
-        const currentFloor = Math.floor(this.camera.position.y / 6) + 2;
-        document.getElementById('floor-counter').innerText = `ЭТАЖ: ${currentFloor} / 5`;
-    }
-
-    collectItem(item, idx) {
-        if (item.userData.type === 'AWP') {
-            this.player.hasAWP = true;
-            this.player.ammo += 10;
-            document.getElementById('weapon-name').innerText = "ОРУЖИЕ: AWP (7.62)";
-            document.getElementById('status-text').innerText = "СТАТУС: ВООРУЖЕН";
-            this.dinisData.state = 'HUNT';
-        }
-        this.scene.remove(item);
-        this.items.splice(idx, 1);
-        this.updateUI();
-    }
-
-    updateMonster(dt) {
-        const m = this.dinisData;
-        if (m.isStunned) return;
-
-        const dist = m.mesh.position.distanceTo(this.camera.position);
-        
-        if (m.state === 'HUNT') {
-            const dir = new THREE.Vector3().subVectors(this.camera.position, m.mesh.position).normalize();
-            m.mesh.position.addScaledVector(dir, m.speed);
-            m.mesh.lookAt(this.camera.position.x, m.mesh.position.y, this.camera.position.z);
-            
-            // Если слишком близко - урон
-            if (dist < 2.2) {
-                this.player.health -= 50 * dt;
-                this.updateUI();
-                if (this.player.health <= 0) this.gameOver();
-            }
-        }
-        
-        // Эффект безумия (экран трясется)
-        if (dist < 10) {
-            this.camera.position.x += (Math.random()-0.5) * 0.05;
-            this.camera.position.z += (Math.random()-0.5) * 0.05;
-        }
-    }
-
-    updateUI() {
-        document.getElementById('health-bar-fill').style.width = this.player.health + '%';
-        document.getElementById('ammo-count').innerText = `ПАТРОНЫ: ${this.player.ammo} / INF`;
-    }
-
-    gameOver() {
-        this.controls.isLocked = false;
-        document.exitPointerLock();
-        document.getElementById('death-screen').style.display = 'flex';
-    }
-
-    animate() {
-        requestAnimationFrame(() => this.animate());
-        const dt = this.clock.getDelta();
-        
-        this.updatePlayer(dt);
-        this.updateMonster(dt);
-        
-        this.renderer.render(this.scene, this.camera);
     }
 }
 
-// Поехали!
-const game = new GameCore();
+function draw() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    ctx.save();
+    ctx.translate(-cameraX, 0);
 
+    // Фон
+    ctx.fillStyle = state === 'YARD' ? '#050a05' : '#111';
+    ctx.fillRect(cameraX, 0, canvas.width, canvas.height);
+
+    platforms.forEach(p => {
+        ctx.fillStyle = '#222';
+        ctx.fillRect(p.x, p.y, p.w, p.h);
+        ctx.strokeStyle = '#333';
+        ctx.strokeRect(p.x, p.y, p.w, p.h);
+    });
+
+    objects.forEach(obj => {
+        if (obj.type === 'junk') {
+            ctx.fillStyle = '#444';
+            ctx.fillRect(obj.x, obj.y+20, obj.w, obj.h-20); // Полочки/мусор
+            ctx.fillStyle = '#222'; ctx.fillRect(obj.x+5, obj.y+25, obj.w-10, 5);
+        } else if (obj.type === 'locker') {
+            ctx.fillStyle = '#2c3e50'; ctx.fillRect(obj.x, obj.y, obj.w, obj.h);
+            ctx.fillStyle = '#000'; ctx.fillRect(obj.x+obj.w-15, obj.y+40, 5, 20); // Ручка
+        } else if (obj.type === 'bush') {
+            ctx.fillStyle = '#1b4d3e';
+            ctx.beginPath(); ctx.arc(obj.x+35, obj.y+40, 40, 0, Math.PI*2); ctx.fill();
+        } else if (obj.type === 'pitbike') {
+            ctx.fillStyle = '#f1c40f'; ctx.fillRect(obj.x, obj.y, obj.w, obj.h);
+        } else if (obj.type === 'lift' || obj.type.includes('door')) {
+            ctx.fillStyle = '#34495e'; ctx.fillRect(obj.x, obj.y, obj.w, obj.h);
+        }
+    });
+
+    if (denis.active) drawHuman(denis.x, denis.y, denis.w, denis.h, '#000', true);
+    if (!player.hiding) drawHuman(player.x, player.y, player.w, player.h, '#3498db');
+
+    ctx.restore();
+    ctx.fillStyle = `rgba(0,0,0,${alpha})`;
+    ctx.fillRect(0,0, canvas.width, canvas.height);
+
+    ui.innerText = `Этап: ${state} | Ключи: ${keysFound}/3 | ${message}`;
+}
+
+// ГОНКА (ФИНАЛ)
+let cars = [];
+let raceTimer = 0;
+let raceX = 0;
+
+function startRacing() {
+    state = 'RACING';
+    alpha = 1;
+    raceX = window.innerWidth / 2;
+}
+
+function updateRace() {
+    if (alpha > 0) alpha -= 0.02;
+    canvas.width = window.innerWidth; canvas.height = window.innerHeight;
+    ctx.fillStyle = '#111'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#222'; ctx.fillRect(canvas.width/2-200, 0, 400, canvas.height);
+
+    if (keys['KeyA'] && raceX > canvas.width/2-180) raceX -= 3;
+    if (keys['KeyD'] && raceX < canvas.width/2+180) raceX += 3;
+
+    // Питбайк игрока
+    ctx.fillStyle = '#f1c40f'; ctx.fillRect(raceX - 15, canvas.height - 120, 30, 60);
+    // Дiнiс на хвосте
+    ctx.fillStyle = '#000'; ctx.fillRect(canvas.width/2 - 25, canvas.height - 50, 50, 40);
+
+    raceTimer++;
+    // Машины теперь реже и медленнее
+    if (raceTimer % 115 === 0) cars.push({x: canvas.width/2 - 150 + Math.random()*300, y: -100});
+    
+    ctx.fillStyle = '#e74c3c';
+    cars.forEach((c, i) => {
+        c.y += 2; // Снизил скорость встречки
+        ctx.fillRect(c.x-25, c.y, 50, 80);
+        if (Math.abs(c.x - raceX) < 35 && Math.abs(c.y - (canvas.height - 120)) < 50) location.reload();
+    });
+
+    if (raceTimer > 3000) {
+        state = 'END';
+        ctx.fillStyle = '#fff'; ctx.font = 'bold 50px Arial';
+        ctx.fillText('МУРИНО', canvas.width/2 - 100, canvas.height/2);
+        ctx.font = '25px Arial'; ctx.fillText('ГГ: Всё?..', canvas.width/2 - 50, canvas.height/2 + 60);
+    }
+}
+
+function gameLoop() {
+    if (state === 'RACING') updateRace();
+    else if (state !== 'END') { update(); draw(); }
+    requestAnimationFrame(gameLoop);
+}
+
+initBasement();
+gameLoop();
 </script>
 </body>
 </html>
