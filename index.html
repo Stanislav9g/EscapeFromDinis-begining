@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>TITAN TIMUR: ULTIMATE HORROR ENGINE</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; user-select: none; }
+        #game-container { position: relative; width: 100vw; height: 100vh; }
+        
+        /* Интерфейс */
+        #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 10; }
+        #crosshair { position: absolute; top: 50%; left: 50%; width: 4px; height: 4px; background: rgba(255,255,255,0.8); border-radius: 50%; transform: translate(-50%, -50%); }
+        #crosshair-circle { position: absolute; top: 50%; left: 50%; width: 30px; height: 30px; border: 1px solid rgba(255,255,255,0.2); border-radius: 50%; transform: translate(-50%, -50%); }
+        
+        .stat-box { position: absolute; padding: 15px; color: #ff3333; text-shadow: 2px 2px #000; border-left: 3px solid #ff3333; background: rgba(0,0,0,0.5); }
+        #top-info { top: 20px; left: 20px; }
+        #bottom-info { bottom: 20px; right: 20px; text-align: right; }
+        
+        #health-bar-bg { width: 200px; height: 10px; background: #300; margin-top: 5px; }
+        #health-bar-fill { width: 100%; height: 100%; background: #f00; transition: width 0.3s; }
+        
+        /* Эффекты */
+        #vignette { position: absolute; top: 0; left: 0; width: 100%; height: 100%; box-shadow: inset 0 0 150px rgba(0,0,0,0.9); pointer-events: none; }
+        #noise { position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0.05; pointer-events: none; background: url('https://media.giphy.com/media/oEI9uWUicG7E4/giphy.gif'); }
+        
+        /* Экраны */
+        .overlay-screen { position: absolute; top: 0; left: 0; width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; background: rgba(0,0,0,0.9); z-index: 100; transition: opacity 1s; }
+        #death-screen { display: none; color: #ff0000; }
+        #start-screen { color: #fff; }
+        
+        button { background: #500; color: #fff; border: 1px solid #f00; padding: 15px 40px; font-size: 1.2rem; cursor: pointer; margin-top: 20px; letter-spacing: 2px; }
+        button:hover { background: #800; }
+        
+        #inventory-hud { position: absolute; bottom: 20px; left: 20px; display: flex; gap: 10px; }
+        .inv-slot { width: 50px; height: 50px; background: rgba(0,0,0,0.7); border: 1px solid #444; display: flex; justify-content: center; align-items: center; color: #fff; font-size: 0.8rem; }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <div id="vignette"></div>
+    <div id="noise"></div>
+    
+    <div id="ui-layer">
+        <div id="crosshair"></div>
+        <div id="crosshair-circle"></div>
+        
+        <div id="top-info" class="stat-box">
+            <div>ОБЪЕКТ: ТИТАН ТИМУР</div>
+            <div id="health-bar-bg"><div id="health-bar-fill"></div></div>
+            <div id="status-text" style="font-size: 0.8rem; margin-top: 5px;">СТАТУС: НОРМА</div>
+        </div>
+        
+        <div id="bottom-info" class="stat-box">
+            <div id="weapon-name">ОРУЖИЕ: КУЛАКИ</div>
+            <div id="ammo-count">ПАТРОНЫ: 0 / 0</div>
+            <div id="floor-counter">ЭТАЖ: 1 / 5</div>
+        </div>
+
+        <div id="inventory-hud">
+            <div class="inv-slot" id="slot-1">1</div>
+            <div class="inv-slot" id="slot-2">2</div>
+            <div class="inv-slot" id="slot-3">3</div>
+        </div>
+    </div>
+
+    <div id="start-screen" class="overlay-screen">
+        <h1 style="font-size: 3rem; text-shadow: 0 0 20px #f00;">PROJECT: DINIS</h1>
+        <p>Найди AWP в подвале. Не дай ему подойти.</p>
+        <button id="start-btn">ЗАПУСК СИСТЕМЫ</button>
+    </div>
+
+    <div id="death-screen" class="overlay-screen">
+        <h1 style="font-size: 4rem;">СИСТЕМА ОТКЛЮЧЕНА</h1>
+        <p>ДІНІС ПОГЛОТИЛ ВАС</p>
+        <button onclick="location.reload()">ПЕРЕЗАГРУЗКА</button>
+    </div>
+</div>
+
+<script type="importmap">
+    { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+
+/** * КЛАСС ЗВУКОВОГО ДВИЖКА (Web Audio API)
+ * Создает атмосферу без внешних mp3 файлов
+ */
+class SoundEngine {
+    constructor() {
+        this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+
+    playAmbient() {
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'brown'; 
+        osc.frequency.setValueAtTime(40, this.ctx.currentTime);
+        gain.gain.setValueAtTime(0.02, this.ctx.currentTime);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start();
+    }
+
+    playShoot() {
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(150, this.ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.5);
+        gain.gain.setValueAtTime(0.1, this.ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.5);
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start();
+        osc.stop(this.ctx.currentTime + 0.5);
+    }
+
+    playStep() {
+        const noise = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        noise.type = 'triangle';
+        noise.frequency.setValueAtTime(60, this.ctx.currentTime);
+        gain.gain.setValueAtTime(0.01, this.ctx.currentTime);
+        gain.gain.linearRampToValueAtTime(0, this.ctx.currentTime + 0.1);
+        noise.connect(gain);
+        gain.connect(this.ctx.destination);
+        noise.start();
+        noise.stop(this.ctx.currentTime + 0.1);
+    }
+}
+
+/**
+ * ГЛАВНЫЙ КЛАСС ИГРЫ
+ */
+class GameCore {
+    constructor() {
+        this.scene = new THREE.Scene();
+        this.scene.background = new THREE.Color(0x020202);
+        this.scene.fog = new THREE.FogExp2(0x000000, 0.1);
+        
+        this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+        this.renderer.setSize(window.innerWidth, window.innerHeight);
+        this.renderer.setPixelRatio(window.devicePixelRatio);
+        this.renderer.shadowMap.enabled = true;
+        this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        document.getElementById('game-container').appendChild(this.renderer.domElement);
+
+        this.sounds = new SoundEngine();
+        this.clock = new THREE.Clock();
+        
+        // Параметры игрока
+        this.player = {
+            velocity: new THREE.Vector3(),
+            direction: new THREE.Vector3(),
+            speed: 5.0,
+            runSpeed: 9.0,
+            health: 100,
+            sanity: 100,
+            hasAWP: false,
+            ammo: 0,
+            isGrounded: true
+        };
+
+        this.controls = {
+            moveF: false, moveB: false, moveL: false, moveR: false, shift: false,
+            mouse: new THREE.Vector2(),
+            isLocked: false
+        };
+
+        this.objects = []; // Коллизии
+        this.items = []; // Лут
+        this.monsters = []; // Враги
+
+        this.init();
+    }
+
+    init() {
+        this.setupLights();
+        this.generateMap();
+        this.createPlayerModel();
+        this.spawnMonster();
+        this.bindEvents();
+        this.animate();
+    }
+
+    setupLights() {
+        // Фоновое освещение
+        const amb = new THREE.AmbientLight(0x111122, 0.5);
+        this.scene.add(amb);
+
+        // Фонарик Тимура
+        this.flashlight = new THREE.SpotLight(0xffffff, 20);
+        this.flashlight.angle = Math.PI / 7;
+        this.flashlight.penumbra = 0.4;
+        this.flashlight.decay = 2;
+        this.flashlight.distance = 45;
+        this.flashlight.castShadow = true;
+        this.scene.add(this.flashlight);
+        this.scene.add(this.flashlight.target);
+    }
+
+    /** * ПРОЦЕДУРНАЯ ГЕНЕРАЦИЯ МИРА
+     * Создает сложную структуру комнат и коридоров
+     */
+    generateMap() {
+        const floorSize = 120;
+        const floorH = 6;
+        
+        const wallMat = new THREE.MeshPhongMaterial({ color: 0x222222 });
+        const floorMat = new THREE.MeshPhongMaterial({ color: 0x111111 });
+
+        // Создаем 5 этажей
+        for (let f = -1; f < 5; f++) {
+            const y = f * floorH;
+            
+            // Основной пол
+            const floor = new THREE.Mesh(new THREE.PlaneGeometry(floorSize, floorSize), floorMat);
+            floor.rotation.x = -Math.PI / 2;
+            floor.position.y = y;
+            floor.receiveShadow = true;
+            this.scene.add(floor);
+
+            // Потолок
+            const ceil = new THREE.Mesh(new THREE.PlaneGeometry(floorSize, floorSize), wallMat);
+            ceil.rotation.x = Math.PI / 2;
+            ceil.position.y = y + floorH;
+            this.scene.add(ceil);
+
+            // Стены-периметр
+            this.addWall(0, y + 3, floorSize/2, floorSize, 6, 1);
+            this.addWall(0, y + 3, -floorSize/2, floorSize, 6, 1);
+            this.addWall(floorSize/2, y + 3, 0, 1, 6, floorSize);
+            this.addWall(-floorSize/2, y + 3, 0, 1, 6, floorSize);
+
+            // Внутренние перегородки (сложный паттерн)
+            for (let i = 0; i < 15; i++) {
+                const wx = Math.floor(Math.random() * 10 - 5) * 10;
+                const wz = Math.floor(Math.random() * 10 - 5) * 10;
+                const ww = Math.random() > 0.5 ? 15 : 2;
+                const wd = ww === 2 ? 15 : 2;
+                this.addWall(wx, y + 3, wz, ww, 6, wd);
+            }
+            
+            // Мебель (простые кубы-шкафы)
+            for (let j = 0; j < 10; j++) {
+                const cabinet = new THREE.Mesh(new THREE.BoxGeometry(2, 4, 1), new THREE.MeshPhongMaterial({color: 0x1a0a00}));
+                cabinet.position.set(Math.random()*80-40, y + 2, Math.random()*80-40);
+                this.scene.add(cabinet);
+                this.objects.push(cabinet);
+            }
+        }
+
+        // Подвал (спец зона)
+        this.spawnWeapon(0, -5.5, 0);
+    }
+
+    addWall(x, y, z, w, h, d) {
+        const wall = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshPhongMaterial({color: 0x252525}));
+        wall.position.set(x, y, z);
+        wall.castShadow = true;
+        wall.receiveShadow = true;
+        this.scene.add(wall);
+        this.objects.push(wall);
+    }
+
+    spawnWeapon(x, y, z) {
+        const awp = new THREE.Group();
+        const body = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.4, 2), new THREE.MeshPhongMaterial({color: 0x004400}));
+        awp.add(body);
+        awp.position.set(x, y, z);
+        awp.userData = { type: 'AWP' };
+        this.scene.add(awp);
+        this.items.push(awp);
+    }
+
+    createPlayerModel() {
+        this.camera.position.set(0, 1.7, 10);
+        this.player.mesh = new THREE.Group();
+        this.scene.add(this.player.mesh);
+    }
+
+    spawnMonster() {
+        const dinis = new THREE.Group();
+        const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.7, 2, 4, 8), new THREE.MeshPhongMaterial({color: 0x000000}));
+        dinis.add(body);
+        
+        const eyeL = new THREE.Mesh(new THREE.SphereGeometry(0.12), new THREE.MeshBasicMaterial({color: 0xff0000}));
+        eyeL.position.set(0.3, 1.2, 0.5);
+        const eyeR = eyeL.clone();
+        eyeR.position.x = -0.3;
+        dinis.add(eyeL, eyeR);
+
+        dinis.position.set(30, 18, 30); // Ждет на 4 этаже
+        this.scene.add(dinis);
+        
+        this.dinisData = {
+            mesh: dinis,
+            speed: 0.05,
+            isStunned: false,
+            lastSeen: new THREE.Vector3(),
+            state: 'IDLE' // IDLE, HUNT, STUN
+        };
+        this.monsters.push(this.dinisData);
+    }
+
+    bindEvents() {
+        document.getElementById('start-btn').onclick = () => {
+            document.body.requestPointerLock();
+            document.getElementById('start-screen').style.opacity = '0';
+            setTimeout(() => document.getElementById('start-screen').style.display = 'none', 1000);
+            this.sounds.playAmbient();
+        };
+
+        document.addEventListener('pointerlockchange', () => {
+            this.controls.isLocked = document.pointerLockElement === document.body;
+        });
+
+        window.addEventListener('keydown', (e) => {
+            if (e.code === 'KeyW') this.controls.moveF = true;
+            if (e.code === 'KeyS') this.controls.moveB = true;
+            if (e.code === 'KeyA') this.controls.moveL = true;
+            if (e.code === 'KeyD') this.controls.moveR = true;
+            if (e.code === 'ShiftLeft') this.controls.shift = true;
+            if (e.code === 'Space' && this.player.isGrounded) this.player.velocity.y = 8;
+        });
+
+        window.addEventListener('keyup', (e) => {
+            if (e.code === 'KeyW') this.controls.moveF = false;
+            if (e.code === 'KeyS') this.controls.moveB = false;
+            if (e.code === 'KeyA') this.controls.moveL = false;
+            if (e.code === 'KeyD') this.controls.moveR = false;
+            if (e.code === 'ShiftLeft') this.controls.shift = false;
+        });
+
+        window.addEventListener('mousemove', (e) => {
+            if (!this.controls.isLocked) return;
+            this.camera.rotation.y -= e.movementX * 0.002;
+            const newX = this.camera.rotation.x - e.movementY * 0.002;
+            this.camera.rotation.x = Math.max(-Math.PI/2.1, Math.min(Math.PI/2.1, newX));
+        });
+
+        window.addEventListener('mousedown', () => {
+            if (this.controls.isLocked && this.player.hasAWP && this.player.ammo > 0) {
+                this.shoot();
+            }
+        });
+    }
+
+    shoot() {
+        this.player.ammo--;
+        this.sounds.playShoot();
+        this.updateUI();
+
+        // Отдача
+        this.camera.rotation.x += 0.05;
+
+        const ray = new THREE.Raycaster();
+        ray.setFromCamera(new THREE.Vector2(0,0), this.camera);
+        
+        const hits = ray.intersectObjects(this.scene.children, true);
+        if (hits.length > 0) {
+            const hit = hits[0];
+            if (hit.object.parent === this.dinisData.mesh || hit.object === this.dinisData.mesh) {
+                this.stunMonster(this.dinisData);
+            }
+        }
+    }
+
+    stunMonster(m) {
+        m.isStunned = true;
+        m.state = 'STUN';
+        m.mesh.rotation.x = Math.PI / 2;
+        document.getElementById('status-text').innerText = "СТАТУС: ЦЕЛЬ НЕЙТРАЛИЗОВАНА";
+        setTimeout(() => {
+            m.isStunned = false;
+            m.state = 'HUNT';
+            m.mesh.rotation.x = 0;
+            document.getElementById('status-text').innerText = "СТАТУС: УГРОЗА ОБНАРУЖЕНА";
+        }, 8000);
+    }
+
+    updatePlayer(dt) {
+        if (!this.controls.isLocked) return;
+
+        const currentSpeed = this.controls.shift ? this.player.runSpeed : this.player.speed;
+        
+        this.player.direction.z = Number(this.controls.moveB) - Number(this.controls.moveF);
+        this.player.direction.x = Number(this.controls.moveR) - Number(this.controls.moveL);
+        this.player.direction.normalize();
+
+        if (this.controls.moveF || this.controls.moveB || this.controls.moveL || this.controls.moveR) {
+            const camDir = new THREE.Vector3();
+            this.camera.getWorldDirection(camDir);
+            camDir.y = 0;
+            camDir.normalize();
+            
+            const sideDir = new THREE.Vector3().crossVectors(new THREE.Vector3(0,1,0), camDir).normalize();
+            
+            const moveVec = new THREE.Vector3().addScaledVector(camDir, -this.player.direction.z).addScaledVector(sideDir, -this.player.direction.x);
+            this.camera.position.addScaledVector(moveVec, currentSpeed * dt);
+            
+            // Звук шагов
+            if (this.clock.elapsedTime % 0.4 < 0.05) this.sounds.playStep();
+        }
+
+        // Гравитация
+        this.player.velocity.y -= 18 * dt;
+        this.camera.position.y += this.player.velocity.y * dt;
+
+        if (this.camera.position.y < 1.7 + (Math.floor(this.camera.position.y / 6) * 6)) {
+            this.player.velocity.y = 0;
+            this.camera.position.y = 1.7 + (Math.floor(this.camera.position.y / 6) * 6);
+            this.player.isGrounded = true;
+        }
+
+        // Обновление фонарика
+        this.flashlight.position.copy(this.camera.position);
+        const fTarget = new THREE.Vector3(0, 0, -1).applyQuaternion(this.camera.quaternion).add(this.camera.position);
+        this.flashlight.target.position.copy(fTarget);
+
+        // Проверка предметов
+        this.items.forEach((item, idx) => {
+            if (this.camera.position.distanceTo(item.position) < 2.5) {
+                this.collectItem(item, idx);
+            }
+        });
+        
+        // Этажи
+        const currentFloor = Math.floor(this.camera.position.y / 6) + 2;
+        document.getElementById('floor-counter').innerText = `ЭТАЖ: ${currentFloor} / 5`;
+    }
+
+    collectItem(item, idx) {
+        if (item.userData.type === 'AWP') {
+            this.player.hasAWP = true;
+            this.player.ammo += 10;
+            document.getElementById('weapon-name').innerText = "ОРУЖИЕ: AWP (7.62)";
+            document.getElementById('status-text').innerText = "СТАТУС: ВООРУЖЕН";
+            this.dinisData.state = 'HUNT';
+        }
+        this.scene.remove(item);
+        this.items.splice(idx, 1);
+        this.updateUI();
+    }
+
+    updateMonster(dt) {
+        const m = this.dinisData;
+        if (m.isStunned) return;
+
+        const dist = m.mesh.position.distanceTo(this.camera.position);
+        
+        if (m.state === 'HUNT') {
+            const dir = new THREE.Vector3().subVectors(this.camera.position, m.mesh.position).normalize();
+            m.mesh.position.addScaledVector(dir, m.speed);
+            m.mesh.lookAt(this.camera.position.x, m.mesh.position.y, this.camera.position.z);
+            
+            // Если слишком близко - урон
+            if (dist < 2.2) {
+                this.player.health -= 50 * dt;
+                this.updateUI();
+                if (this.player.health <= 0) this.gameOver();
+            }
+        }
+        
+        // Эффект безумия (экран трясется)
+        if (dist < 10) {
+            this.camera.position.x += (Math.random()-0.5) * 0.05;
+            this.camera.position.z += (Math.random()-0.5) * 0.05;
+        }
+    }
+
+    updateUI() {
+        document.getElementById('health-bar-fill').style.width = this.player.health + '%';
+        document.getElementById('ammo-count').innerText = `ПАТРОНЫ: ${this.player.ammo} / INF`;
+    }
+
+    gameOver() {
+        this.controls.isLocked = false;
+        document.exitPointerLock();
+        document.getElementById('death-screen').style.display = 'flex';
+    }
+
+    animate() {
+        requestAnimationFrame(() => this.animate());
+        const dt = this.clock.getDelta();
+        
+        this.updatePlayer(dt);
+        this.updateMonster(dt);
+        
+        this.renderer.render(this.scene, this.camera);
+    }
+}
+
+// Поехали!
+const game = new GameCore();
+
+</script>
+</body>
+</html>
