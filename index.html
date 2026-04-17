@@ -59,6 +59,8 @@ let hasBasementKey = false;
 let hasGas = false;
 let message = "";
 let alpha = 1; 
+    let explosionAlpha = 0; 
+let isExploded = false;
 
 const player = {
     x: 100, y: 0, w: 30, h: 64, vx: 0, vy: 0,
@@ -182,7 +184,6 @@ if (keys['Space'] && player.grounded) {
     player.vy = -12;
     player.grounded = false;
 }
-
         player.vy += 0.6;
         player.x += player.vx;
         player.y += player.vy;
@@ -295,30 +296,51 @@ function updateRace() {
     ctx.fillStyle = '#111'; ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.fillStyle = '#222'; ctx.fillRect(canvas.width/2-200, 0, 400, canvas.height);
 
-    if (keys['KeyA'] && raceX > canvas.width/2-180) raceX -= 3;
-    if (keys['KeyD'] && raceX < canvas.width/2+180) raceX += 3;
+    if (!isExploded) {
+        // Управление твоим байком (A / D или стрелки на экране)
+        if (keys['KeyA'] && raceX > canvas.width/2-180) raceX -= 4;
+        if (keys['KeyD'] && raceX < canvas.width/2+180) raceX += 4;
 
-    // Питбайк игрока
-    ctx.fillStyle = '#f1c40f'; ctx.fillRect(raceX - 15, canvas.height - 120, 30, 60);
-    // Дiнiс на хвосте
-    ctx.fillStyle = '#000'; ctx.fillRect(canvas.width/2 - 25, canvas.height - 50, 50, 40);
+        // Денис уворачивается сам (бот)
+        let denisX = canvas.width/2; 
+        cars.forEach(c => {
+            if (c.y > canvas.height - 300 && Math.abs(c.x - denisX) < 80) {
+                denisX += c.x > denisX ? -60 : 60; 
+            }
+        });
 
-    raceTimer++;
-    // Машины теперь реже и медленнее
-    if (raceTimer % 115 === 0) cars.push({x: canvas.width/2 - 150 + Math.random()*300, y: -100});
-    
-    ctx.fillStyle = '#e74c3c';
-    cars.forEach((c, i) => {
-        c.y += 2; // Снизил скорость встречки
-        ctx.fillRect(c.x-25, c.y, 50, 80);
-        if (Math.abs(c.x - raceX) < 35 && Math.abs(c.y - (canvas.height - 120)) < 50) location.reload();
-    });
+        // Рисуем тебя и Дениса
+        ctx.fillStyle = '#f1c40f'; ctx.fillRect(raceX - 15, canvas.height - 120, 30, 60); // Игрок
+        ctx.fillStyle = '#000'; ctx.fillRect(denisX - 25, canvas.height - 70, 50, 60);    // Денис
 
-    if (raceTimer > 3000) {
-        state = 'END';
-        ctx.fillStyle = '#fff'; ctx.font = 'bold 50px Arial';
-        ctx.fillText('МУРИНО', canvas.width/2 - 100, canvas.height/2);
-        ctx.font = '25px Arial'; ctx.fillText('Тимур: Это конец?..', canvas.width/2 - 50, canvas.height/2 + 60);
+        raceTimer++;
+        if (raceTimer % 110 === 0) cars.push({x: canvas.width/2 - 150 + Math.random()*300, y: -100});
+        
+        ctx.fillStyle = '#e74c3c';
+        cars.forEach((c) => {
+            c.y += 3; // Скорость встречки
+            ctx.fillRect(c.x-25, c.y, 50, 80);
+            if (Math.abs(c.x - raceX) < 35 && Math.abs(c.y - (canvas.height - 120)) < 50) location.reload();
+        });
+
+        // Таймер до взрыва (примерно 45-60 секунд)
+        if (raceTimer > 2500) isExploded = true;
+        
+    } else {
+        // Эффект взрыва и уход в черное
+        explosionAlpha += 0.04;
+        if (explosionAlpha < 1.5) {
+            ctx.fillStyle = `rgba(255, 100, 0, ${1.5 - explosionAlpha})`;
+            ctx.beginPath();
+            ctx.arc(canvas.width/2, canvas.height - 100, explosionAlpha * 600, 0, Math.PI*2);
+            ctx.fill();
+        } else {
+            state = 'END';
+            ctx.fillStyle = '#000'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = '#fff'; ctx.font = 'bold 50px Arial';
+            ctx.fillText('МУРИНО', canvas.width/2 - 100, canvas.height/2);
+            ctx.font = '25px Arial'; ctx.fillText('Титан Тимур: Это конец?..', canvas.width/2 - 50, canvas.height/2 + 60);
+        }
     }
 }
 
