@@ -11,27 +11,26 @@
             text-shadow: 2px 2px 5px #000; font-size: 18px; z-index: 100;
             background: rgba(0,0,0,0.5); padding: 10px; border-radius: 5px;
         }
-/* Кнопки для телефона */
-.mobile-controls {
-    position: absolute; 
-    bottom: 20px; 
-    width: 100%; 
-    display: flex; 
-    justify-content: space-between; 
-    padding: 0 20px; 
-    box-sizing: border-box; 
-    z-index: 1000;
-}
-.btn {
-    width: 65px; height: 65px; 
-    background: rgba(255, 255, 255, 0.2);
-    border: 2px solid #fff; 
-    border-radius: 15px;
-    display: flex; align-items: center; justify-content: center;
-    color: white; font-size: 24px; font-weight: bold;
-    user-select: none; touch-action: none;
-}
-.btn:active { background: rgba(255, 255, 255, 0.5); }
+        .mobile-controls {
+            position: absolute; 
+            bottom: 20px; 
+            width: 100%; 
+            display: flex; 
+            justify-content: space-between; 
+            padding: 0 20px; 
+            box-sizing: border-box; 
+            z-index: 1000;
+        }
+        .btn {
+            width: 65px; height: 65px; 
+            background: rgba(255, 255, 255, 0.2);
+            border: 2px solid #fff; 
+            border-radius: 15px;
+            display: flex; align-items: center; justify-content: center;
+            color: white; font-size: 24px; font-weight: bold;
+            user-select: none; touch-action: none;
+        }
+        .btn:active { background: rgba(255, 255, 255, 0.5); }
     </style>
 </head>
 <body>
@@ -41,7 +40,7 @@
         <div class="btn" id="mRight">→</div>
     </div>
     <div style="display:flex; gap:10px;">
-        <div class="btn" id="mJump" style="background: rgba(52, 152, 219, 0.4);">↑</div>
+        <div class="btn" id="mJump">↑</div>
         <div class="btn" id="mE" style="background: rgba(46, 204, 113, 0.4);">E</div>
     </div>
 </div>
@@ -53,37 +52,44 @@ const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const ui = document.getElementById('ui');
 
-let state = 'BASEMENT'; // BASEMENT, HOUSE, YARD, RACING, END
+let state = 'BASEMENT';
 let keysFound = 0;
 let hasBasementKey = false;
 let hasGas = false;
 let message = "";
 let alpha = 1; 
-    let explosionAlpha = 0; 
+let explosionAlpha = 0; 
 let isExploded = false;
 
 const player = {
     x: 100, y: 0, w: 30, h: 64, vx: 0, vy: 0,
-    speed: 4.5, run: 7.5, dir: 1, hiding: false, grounded: false
+    speed:3, run: 5, dir: 1, hiding: false, grounded: false
 };
 
-const denis = {
-    x: 2500, y: 0, w: 50, h: 140, speed: 2.3, chaseSpeed: 4.8,
-    dir: -1, state: 'WANDER', targetX: 2500, active: false
+let denis = {
+    x: 2000, 
+    y: 400, 
+    w: 40, 
+    h: 80, 
+    speed: 0.8, 
+    chaseSpeed: 1.5, 
+    dir: -1, 
+    state: 'WANDER', 
+    targetX: 2000, 
+    active: false,
+    hunting: false 
 };
-
 let objects = [];
 let platforms = [];
 let cameraX = 0;
 const keys = {};
-// Функция для связи кнопок с игрой
+
 function bindBtn(id, key) {
     const el = document.getElementById(id);
     el.addEventListener('touchstart', (e) => { e.preventDefault(); keys[key] = true; });
     el.addEventListener('touchend', (e) => { e.preventDefault(); keys[key] = false; });
 }
 
-// Привязываем кнопки к клавишам
 bindBtn('mLeft', 'KeyA');
 bindBtn('mRight', 'KeyD');
 bindBtn('mJump', 'Space');
@@ -92,19 +98,14 @@ bindBtn('mE', 'KeyE');
 window.onkeydown = (e) => keys[e.code] = true;
 window.onkeyup = (e) => keys[e.code] = false;
 
-// Рисование детализированного персонажа
 function drawHuman(x, y, w, h, color, isDenis = false) {
     ctx.fillStyle = color;
-    // Тело
     ctx.fillRect(x + w*0.2, y + h*0.3, w*0.6, h*0.4);
-    // Голова
     ctx.beginPath();
     ctx.arc(x + w*0.5, y + h*0.15, w*0.35, 0, Math.PI*2);
     ctx.fill();
-    // Ноги
     ctx.fillRect(x + w*0.2, y + h*0.7, w*0.2, h*0.3);
     ctx.fillRect(x + w*0.6, y + h*0.7, w*0.2, h*0.3);
-    
     if (isDenis) {
         ctx.fillStyle = 'red';
         ctx.fillRect(x + w*0.3, y + h*0.1, 4, 2);
@@ -114,10 +115,9 @@ function drawHuman(x, y, w, h, color, isDenis = false) {
 
 function initBasement() {
     state = 'BASEMENT';
-    message = "Темный подвал... Найди ключ в хламе (E)";
+    message = "Темный подвал... Найди ключ (E)";
     platforms = [{ x: 0, y: 550, w: 2500, h: 100 }];
     objects = [];
-    // Много рандомного мусора
     let keyPlaced = false;
     for(let i=0; i<15; i++) {
         let isKey = !keyPlaced && (Math.random() > 0.8 || i === 14);
@@ -133,99 +133,240 @@ function initHouse() {
     player.x = 100; player.y = 800;
     denis.active = true;
     keysFound = 0;
+    
+    // Твои платформы из файла
     platforms = [
-        { x: 0, y: 900, w: 4000, h: 40 }, 
-        { x: 0, y: 650, w: 3500, h: 30 }, 
-        { x: 500, y: 400, w: 3500, h: 30 }
+        { x: 0, y: 900, w: 4500, h: 40 }, 
+        { x: 0, y: 650, w: 4500, h: 30 }, 
+        { x: 500, y: 400, w: 4000, h: 30 }
     ];
+
     objects = [
-        { x: 3300, y: 650, w: 80, h: 250, type: 'stairs', toY: 650 },
-        { x: 600, y: 400, w: 80, h: 250, type: 'stairs', toY: 400 },
-        { x: 3400, y: 510, w: 90, h: 140, type: 'lift' }
+        { x: 4300, y: 650, w: 80, h: 250, type: 'stairs' },
+        { x: 600, y: 400, w: 80, h: 250, type: 'stairs' },
+        { x: 4400, y: 510, w: 90, h: 140, type: 'lift' }
     ];
-    // Рандомные шкафы
-    let cabinets = [
-        {x: 400, y: 800, lvl: 0}, {x: 1200, y: 800, lvl: 0}, {x: 2000, y: 800, lvl: 0},
-        {x: 800, y: 550, lvl: 1}, {x: 1800, y: 550, lvl: 1}, {x: 2600, y: 550, lvl: 1},
-        {x: 1000, y: 300, lvl: 2}, {x: 2200, y: 300, lvl: 2}
+
+    // Точные координаты полов (Y)
+    const roomSpots = [
+        {x: 300, y: 900}, {x: 1300, y: 900}, {x: 2300, y: 900}, // 1 этаж
+        {x: 800, y: 650}, {x: 1800, y: 650}, {x: 2800, y: 650}, // 2 этаж
+        {x: 1200, y: 400}, {x: 2500, y: 400}                   // 3 этаж
     ];
-    // Перемешиваем и выбираем 3 с ключами
-    cabinets.sort(() => Math.random() - 0.5);
-    cabinets.forEach((c, idx) => {
-        objects.push({ x: c.x, y: c.y, w: 60, h: 100, type: 'locker', hasKey: idx < 3 });
-    });
-}
+
+    const furnitureTypes = ['шкаф', 'кровать', 'тумбочка', 'табуретка', 'стол'];
+    roomSpots.sort(() => Math.random() - 0.5);
+
+    roomSpots.forEach((spot, rIdx) => {
+        // 1. Сначала решаем, сколько мебели будет (от 3 до 5)
+        let itemCount = 3 + Math.floor(Math.random() * 3); 
+        let itemsInRoom = [...furnitureTypes].sort(() => Math.random() - 0.5).slice(0, itemCount);
+
+        // 2. РАССЧИТЫВАЕМ ШИРИНУ: 
+        // (количество предметов * расстояние между ними) + небольшой запас по бокам
+        let roomWidth = (itemCount * 110) + 20; 
+
+        // 3. Создаем фон с ИДЕАЛЬНОЙ шириной
+        objects.push({ 
+            x: spot.x - 40, 
+            y: spot.y - 210, 
+            w: roomWidth, 
+            h: 210, 
+            type: 'room_bg' 
+        });
+
+        // 4. Расставляем саму мебель внутри (тут код остается почти таким же)
+        itemsInRoom.forEach((fType, iIdx) => {
+            let h = fType === 'шкаф' ? 100 : 50;
+            objects.push({
+                x: spot.x + (iIdx * 110),
+                y: spot.y - h,
+                w: (fType === 'кровать' || fType === 'стол') ? 90 : 50,
+                h: h,
+                type: 'furniture',
+                subType: fType,
+                hasKey: (rIdx < 3 && iIdx === 0),
+                searched: false
+            });
+        });
+    });}
 
 function initYard() {
     state = 'YARD';
     alpha = 1;
-    player.x = 100; player.y = 500;
+    player.x = 100; 
+    player.y = 500;
     denis.active = false;
     hasGas = false;
     platforms = [{ x: 0, y: 600, w: 6000, h: 100 }];
     objects = [];
-    // Рандомный бензин в кустах
-    let gasIdx = Math.floor(Math.random() * 25);
-    for(let i=0; i<35; i++) {
-        objects.push({ x: 400 + i*150, y: 520, w: 70, h: 80, type: 'bush', hasGas: i === gasIdx });
+
+    // Генерируем случайный индекс для куста с бензином (из первых 15 кустов)
+    let gasIdx = Math.floor(Math.random() * 15);
+
+    // Создаем цепочку разных объектов
+    for(let i = 0; i < 30; i++) {
+        let xPos = 400 + i * 180;
+        let rand = Math.random();
+
+        if (rand < 0.6) {
+            // Рисуем куст (шанс 60%)
+            let isDry = Math.random() < 0.2; // 20% что куст будет сухим
+            objects.push({ 
+                type: 'bush', 
+                x: xPos, 
+                y: 520, 
+                w: 80, 
+                h: 80, 
+                subType: isDry ? 'засохший куст' : 'куст', 
+                hasGas: (i === gasIdx) 
+            });
+        } else if (rand < 0.8) {
+            // Рисуем ведро (шанс 20%)
+            objects.push({ type: 'decor', x: xPos, y: 565, w: 30, h: 35, subType: 'ведро' });
+        } else {
+            // Рисуем покрышки (шанс 20%)
+            objects.push({ type: 'decor', x: xPos, y: 560, w: 50, h: 40, subType: 'покрышки' });
+        }
     }
+
+    // В конце ставим питбайк
     objects.push({ x: 5800, y: 530, w: 100, h: 70, type: 'pitbike' });
 }
 
 function update() {
+    // 1. Эффект появления
     if (alpha > 0) alpha -= 0.02;
 
+    // 2. УПРАВЛЕНИЕ ИГРОКОМ
     if (!player.hiding) {
         let s = keys['ShiftLeft'] ? player.run : player.speed;
+
+        // Находим, стоит ли игрок на лестнице
+let onStairs = objects.find(obj =>
+    obj.type === 'stairs' &&
+    player.x + player.w > obj.x &&
+    player.x < obj.x + obj.w &&
+    player.y + player.h > obj.y && // Проверка высоты
+    player.y < obj.y + obj.h
+);
+
         if (keys['KeyA']) { player.vx = -s; player.dir = -1; }
         else if (keys['KeyD']) { player.vx = s; player.dir = 1; }
         else { player.vx *= 0.8; }
-if (keys['Space'] && player.grounded) {
-    player.vy = -12;
-    player.grounded = false;
-}
-        player.vy += 0.6;
-        player.x += player.vx;
-        player.y += player.vy;
 
-        player.grounded = false;
-        platforms.forEach(p => {
-            if (player.x + player.w > p.x && player.x < p.x + p.w &&
-                player.y + player.h > p.y && player.y + player.h < p.y + p.h + 10) {
+        if (onStairs) {
+            player.vy = 0;
+            if (keys['Space']) player.vy = -s;
+            else if (keys['KeyS']) player.vy = s;
+        } else {
+            if (keys['Space'] && player.grounded) {
+                player.vy = -12;
+                player.grounded = false;
+            }
+            player.vy += 0.6;
+        }
+    }
+
+    player.x += player.vx;
+    player.y += player.vy;
+
+    // 3. КОЛЛИЗИИ С ПЛАТФОРМАМИ
+    player.grounded = false;
+    platforms.forEach(p => {
+        if (player.x + player.w > p.x && player.x < p.x + p.w &&
+            player.y + player.h > p.y && player.y + player.h < p.y + p.h + 10) {
+            let onStairs = objects.find(obj => obj.type === 'stairs' && player.x + player.w > obj.x && player.x < obj.x + obj.w);
+            if (!(onStairs && keys['Space'])) {
                 player.y = p.y - player.h; player.vy = 0; player.grounded = true;
             }
-        });
-    }
+        }
+    });
 
     cameraX += (player.x - canvas.width / 2 - cameraX) * 0.1;
 
+  // 4. ЛОГИКА ДЕНИСА (Исправлено)
     if (denis.active) {
         let dist = Math.abs(denis.x - player.x);
-        let sameFloor = Math.abs(denis.y - player.y) < 150;
+        // Считаем, что вы на одном этаже, если разница по высоте меньше 50
+        let sameFloor = Math.abs(denis.y - player.y) < 50;
 
-        if (player.hiding) { denis.state = 'WANDER'; }
-        else if (dist < 650 && sameFloor) { denis.state = 'CHASE'; }
-
-        if (denis.state === 'CHASE') denis.x += (player.x > denis.x ? 1 : -1) * denis.chaseSpeed;
-        else {
-            if (Math.abs(denis.x - denis.targetX) < 20) denis.targetX = Math.random() * 3500;
-            denis.x += (denis.targetX > denis.x ? 1 : -1) * denis.speed;
+        // 1. ЛОГИКА ОБНАРУЖЕНИЯ
+        if (dist < 350 && sameFloor && !player.hiding) { 
+            // Он видит тебя только если ты НЕ прячешься
+            denis.state = 'CHASE';
+            denis.hunting = true;
+        } else if (denis.state === 'CHASE') {
+            // Если ты только что спрятался, он НЕ разворачивается, 
+            // а просто "забывает" про погоню и идет дальше, куда шел
+            denis.state = 'WANDER';
+            // Мы НЕ меняем speed и targetX здесь, чтобы он прошел мимо
         }
-        platforms.forEach(p => { if (denis.x + denis.w > p.x && denis.x < p.x + p.w) denis.y = p.y - denis.h; });
-        if (dist < 40 && sameFloor && !player.hiding) location.reload();
-    }
 
+        // 2. ДВИЖЕНИЕ
+        if (denis.state === 'CHASE') {
+            denis.x += (player.x > denis.x ? 1 : -1) * 1.5;
+        } else {
+            denis.x += denis.speed;
+            
+            // Если дошел до цели (края) ИЛИ уперся в границы карты (0 или 4000)
+            if (Math.abs(denis.x - denis.targetX) < 30 || denis.x < 100 || denis.x > 3900) {
+                
+                // Прыжок на другой этаж (шанс 50%)
+                if (denis.hunting && Math.random() < 0.5) {
+                    const floors = [900, 650, 400];
+                    denis.y = floors[Math.floor(Math.random() * floors.length)] - denis.h - 60;
+                    denis.vy = 0;
+                }
+                
+                // Выбираем новую цель подальше от текущего места
+                denis.targetX = Math.random() * 3800 + 100;
+                denis.speed = (denis.targetX > denis.x ? 1 : -1) * (denis.hunting ? 1.2 : 0.8);
+            }
+        }
+
+        // 3. ФИЗИКА И ГРАВИТАЦИЯ
+        denis.vy = (denis.vy || 0) + 0.6;
+        denis.y += denis.vy;
+
+        platforms.forEach(p => {
+            if (denis.x + denis.w > p.x && denis.x < p.x + p.w &&
+                denis.y + denis.h >= p.y && denis.y + denis.h <= p.y + 35) {
+                denis.y = p.y - denis.h;
+                denis.vy = 0;
+            }
+        });
+
+        // 4. ПРОВЕРКА СМЕРТИ (строго на одном этаже и в упор)
+        if (dist < 45 && sameFloor && !player.hiding) {
+            location.reload();
+        }
+    }
+    // 5. ВЗАИМОДЕЙСТВИЕ НА 'E' (Тот самый блок, который "пропал")
     if (keys['KeyE']) {
         keys['KeyE'] = false;
         objects.forEach(obj => {
-            if (Math.abs(player.x - obj.x) < 80) {
+            if (Math.abs(player.x - obj.x) < 60 && Math.abs(player.y - obj.y) < 100) {
                 if (obj.type === 'junk' && obj.hasKey) { hasBasementKey = true; message = "Ключ найден!"; }
                 if (obj.type === 'door_to_house' && hasBasementKey) initHouse();
-                if (obj.type === 'locker') {
-                    player.hiding = !player.hiding;
-                    if (obj.hasKey) { keysFound++; obj.hasKey = false; message = "Нашел ключ!"; }
+
+                if (obj.type === 'furniture') {
+                    if (!obj.searched) {
+                        obj.searched = true;
+                        if (obj.hasKey) {
+                            keysFound++;
+                            obj.hasKey = false;
+                            message = "Нашел ключ в " + obj.subType + "!";
+                        } else {
+                            message = "Здесь пусто (" + obj.subType + ")";
+                        }
+                    }
+                    if (obj.subType === 'шкаф' || obj.subType === 'кровать') {
+                        player.hiding = !player.hiding;
+                        if (player.hiding) message = "Ты спрятался!";
+                    }
                 }
-                if (obj.type === 'stairs') player.y = obj.toY - player.h;
+
                 if (obj.type === 'lift' && keysFound >= 3) initYard();
                 if (obj.type === 'bush' && obj.hasGas) { hasGas = true; message = "Бензин у тебя!"; }
                 if (obj.type === 'pitbike' && hasGas) startRacing();
@@ -233,53 +374,126 @@ if (keys['Space'] && player.grounded) {
         });
     }
 }
-
 function draw() {
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
     ctx.save();
     ctx.translate(-cameraX, 0);
 
-    // Фон
-    ctx.fillStyle = state === 'YARD' ? '#050a05' : '#111';
+    ctx.fillStyle = state === 'YARD' ? '#151a15' : '#1a1a1a'; 
     ctx.fillRect(cameraX, 0, canvas.width, canvas.height);
 
     platforms.forEach(p => {
-        ctx.fillStyle = '#222';
+        ctx.fillStyle = '#2a2a2a';
         ctx.fillRect(p.x, p.y, p.w, p.h);
-        ctx.strokeStyle = '#333';
-        ctx.strokeRect(p.x, p.y, p.w, p.h);
     });
 
-    objects.forEach(obj => {
-        if (obj.type === 'junk') {
-            ctx.fillStyle = '#444';
-            ctx.fillRect(obj.x, obj.y+20, obj.w, obj.h-20); // Полочки/мусор
-            ctx.fillStyle = '#222'; ctx.fillRect(obj.x+5, obj.y+25, obj.w-10, 5);
-        } else if (obj.type === 'locker') {
-            ctx.fillStyle = '#2c3e50'; ctx.fillRect(obj.x, obj.y, obj.w, obj.h);
-            ctx.fillStyle = '#000'; ctx.fillRect(obj.x+obj.w-15, obj.y+40, 5, 20); // Ручка
-        } else if (obj.type === 'bush') {
-            ctx.fillStyle = '#1b4d3e';
-            ctx.beginPath(); ctx.arc(obj.x+35, obj.y+40, 40, 0, Math.PI*2); ctx.fill();
+objects.forEach(obj => {
+        // --- РИСОВАНИЕ В ДОМЕ ---
+        if (obj.type === 'room_bg') {
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.03)'; 
+            ctx.fillRect(obj.x, obj.y, obj.w, obj.h);
+            ctx.strokeStyle = '#333'; 
+            ctx.strokeRect(obj.x, obj.y, obj.w, obj.h);
+        } else if (obj.type === 'junk') {
+            ctx.fillStyle = '#333'; ctx.fillRect(obj.x, obj.y+20, obj.w, obj.h-20);
+        } else if (obj.type === 'furniture') {
+            ctx.fillStyle = obj.searched ? '#555' : '#795548'; 
+            if (obj.subType === 'шкаф') {
+                ctx.fillRect(obj.x, obj.y, obj.w, obj.h);
+                ctx.strokeStyle = '#000'; ctx.strokeRect(obj.x + 5, obj.y + 5, obj.w - 10, obj.h - 10);
+            } else if (obj.subType === 'кровать') {
+                ctx.fillRect(obj.x, obj.y + 20, obj.w, 30); 
+                ctx.fillStyle = '#fff'; ctx.fillRect(obj.x + 5, obj.y + 15, 30, 15); 
+            } else if (obj.subType === 'тумбочка') {
+                ctx.fillRect(obj.x, obj.y + 20, obj.w, 30);
+                ctx.fillStyle = '#000'; ctx.fillRect(obj.x + 20, obj.y + 35, 10, 5); 
+            } else if (obj.subType === 'табуретка') {
+                ctx.fillRect(obj.x + 10, obj.y + 20, 30, 10); 
+                ctx.fillRect(obj.x + 15, obj.y + 30, 5, 20); 
+                ctx.fillRect(obj.x + 30, obj.y + 30, 5, 20);
+            } else if (obj.subType === 'стол') {
+                ctx.fillRect(obj.x, obj.y + 10, obj.w, 10); 
+                ctx.fillRect(obj.x + 10, obj.y + 20, 10, 30); 
+                ctx.fillRect(obj.x + 80, obj.y + 20, 10, 30);
+            }   
+        } 
+        
+        // --- РИСОВАНИЕ ВО ДВОРЕ ---
+        else if (obj.type === 'bush') {
+            ctx.fillStyle = obj.subType === 'засохший куст' ? '#5d4037' : '#2d5a27';
+            ctx.beginPath();
+            ctx.arc(obj.x, obj.y, obj.w / 2, 0, Math.PI * 2);
+            ctx.arc(obj.x + 20, obj.y - 15, obj.w / 3, 0, Math.PI * 2);
+            ctx.arc(obj.x - 20, obj.y - 10, obj.w / 3, 0, Math.PI * 2);
+            ctx.fill();
+        } else if (obj.subType === 'ведро') {
+            ctx.fillStyle = '#7f8c8d'; 
+            ctx.fillRect(obj.x, obj.y, obj.w, obj.h);
+            ctx.strokeStyle = '#bdc3c7';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(obj.x + obj.w/2, obj.y, obj.w/2, Math.PI, 0);
+            ctx.stroke();
+        } else if (obj.subType === 'покрышки') {
+            ctx.fillStyle = '#1a1a1a'; 
+            ctx.fillRect(obj.x, obj.y, obj.w, 15);
+            ctx.fillRect(obj.x + 5, obj.y - 12, obj.w - 10, 15);
+            ctx.strokeStyle = '#333';
+            ctx.strokeRect(obj.x, obj.y, obj.w, 15);
         } else if (obj.type === 'pitbike') {
-            ctx.fillStyle = '#f1c40f'; ctx.fillRect(obj.x, obj.y, obj.w, obj.h);
-        } else if (obj.type === 'lift' || obj.type.includes('door')) {
-            ctx.fillStyle = '#34495e'; ctx.fillRect(obj.x, obj.y, obj.w, obj.h);
+            ctx.fillStyle = '#f1c40f';
+            ctx.fillRect(obj.x, obj.y, obj.w, obj.h);
+        }      
+        
+        // --- ЛЕСТНИЦЫ И ДВЕРИ ---
+        else if (obj.type === 'stairs') {
+            ctx.fillStyle = '#4a3728';
+            ctx.fillRect(obj.x, obj.y, 10, obj.h); 
+            ctx.fillRect(obj.x + obj.w - 10, obj.y, 10, obj.h); 
+            for (let s = 0; s < obj.h; s += 30) {
+                ctx.fillRect(obj.x, obj.y + s, obj.w, 5); 
+            }
+        } else if (obj.type === 'lift' || (obj.type && obj.type.includes('door'))) {
+            ctx.fillStyle = '#2c3e50'; 
+            ctx.fillRect(obj.x, obj.y, obj.w, obj.h); 
         }
     });
 
-    if (denis.active) drawHuman(denis.x, denis.y, denis.w, denis.h, '#000', true);
+   if (denis.active) {
+    let distToPlayer = Math.abs(denis.x - player.x);
+    // Если Денис в радиусе света, рисуем над ним восклицательный знак
+    if (distToPlayer < 400 && Math.abs(denis.y - player.y) < 150) {
+        ctx.fillStyle = 'red';
+        ctx.font = 'bold 30px Arial';
+        ctx.fillText('!', denis.x + 15, denis.y - 20);
+    }
+    drawHuman(denis.x, denis.y, denis.w, denis.h, '#000', true);
+}
     if (!player.hiding) drawHuman(player.x, player.y, player.w, player.h, '#3498db');
 
     ctx.restore();
-    ctx.fillStyle = `rgba(0,0,0,${alpha})`;
-    ctx.fillRect(0,0, canvas.width, canvas.height);
 
+// 2. ЭФФЕКТ МЯГКОГО СВЕТА (Рассеивающийся круг)
+    const pX = player.x + player.w / 2 - cameraX;
+    const pY = player.y + player.h * 0.3;
+
+    ctx.save();
+    
+    // Создаем радиальный градиент (центр, радиус начала, центр, радиус конца)
+    // Свет начинается из центра игрока и плавно тухнет к 400 пикселям
+    let gradient = ctx.createRadialGradient(pX, pY, 50, pX, pY, 400);
+    gradient.addColorStop(0, 'rgba(0, 0, 0, 0)');   // В центре полностью прозрачно
+    gradient.addColorStop(1, 'rgba(0, 0, 0, 0.98)'); // На краях — полная темнота
+
+    // Рисуем черный прямоугольник на весь экран, закрашенный этим градиентом
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    
+    ctx.restore();   
     ui.innerText = `Этап: ${state} | Ключи: ${keysFound}/3 | ${message}`;
 }
 
-// ГОНКА (ФИНАЛ)
 let cars = [];
 let raceTimer = 0;
 let raceX = 0;
@@ -297,37 +511,24 @@ function updateRace() {
     ctx.fillStyle = '#222'; ctx.fillRect(canvas.width/2-200, 0, 400, canvas.height);
 
     if (!isExploded) {
-        // Управление твоим байком (A / D или стрелки на экране)
         if (keys['KeyA'] && raceX > canvas.width/2-180) raceX -= 4;
         if (keys['KeyD'] && raceX < canvas.width/2+180) raceX += 4;
 
-        // Денис уворачивается сам (бот)
         let denisX = canvas.width/2; 
-        cars.forEach(c => {
-            if (c.y > canvas.height - 300 && Math.abs(c.x - denisX) < 80) {
-                denisX += c.x > denisX ? -60 : 60; 
-            }
-        });
-
-        // Рисуем тебя и Дениса
-        ctx.fillStyle = '#f1c40f'; ctx.fillRect(raceX - 15, canvas.height - 120, 30, 60); // Игрок
-        ctx.fillStyle = '#000'; ctx.fillRect(denisX - 25, canvas.height - 70, 50, 60);    // Денис
+        ctx.fillStyle = '#f1c40f'; ctx.fillRect(raceX - 15, canvas.height - 120, 30, 60);
+        ctx.fillStyle = '#000'; ctx.fillRect(denisX - 25, canvas.height - 70, 50, 60);
 
         raceTimer++;
         if (raceTimer % 110 === 0) cars.push({x: canvas.width/2 - 150 + Math.random()*300, y: -100});
         
         ctx.fillStyle = '#e74c3c';
         cars.forEach((c) => {
-            c.y += 3; // Скорость встречки
+            c.y += 3;
             ctx.fillRect(c.x-25, c.y, 50, 80);
             if (Math.abs(c.x - raceX) < 35 && Math.abs(c.y - (canvas.height - 120)) < 50) location.reload();
         });
-
-        // Таймер до взрыва (примерно 45-60 секунд)
         if (raceTimer > 2500) isExploded = true;
-        
     } else {
-        // Эффект взрыва и уход в черное
         explosionAlpha += 0.04;
         if (explosionAlpha < 1.5) {
             ctx.fillStyle = `rgba(255, 100, 0, ${1.5 - explosionAlpha})`;
